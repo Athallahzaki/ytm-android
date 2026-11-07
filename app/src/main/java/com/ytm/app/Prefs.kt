@@ -28,6 +28,11 @@ class Prefs(context: Context) {
         get() = sp.getString("username", "") ?: ""
         set(v) { sp.edit().putString("username", v).apply() }
 
+    /** "music" (YouTube Music) or "youtube" (regular YouTube). */
+    var mode: String
+        get() = sp.getString("mode", "music") ?: "music"
+        set(v) { sp.edit().putString("mode", v).apply() }
+
     var token: String?
         get() = sp.getString("token", null)
         set(v) { sp.edit().apply { if (v == null) remove("token") else putString("token", v) }.apply() }

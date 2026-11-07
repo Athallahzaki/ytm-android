@@ -20,7 +20,8 @@ data class Item(
     val id: String,
     val title: String,
     val subtitle: String = "",
-    val thumb: String? = null
+    val thumb: String? = null,
+    val duration: Int = 0 // seconds, 0 = unknown
 ) {
     val thumbUrl: String? get() = thumb ?: if (type == "song") "https://i.ytimg.com/vi/$id/hqdefault.jpg" else null
     /** Subtitles look like "Song • Artist • Album"; pick the artist-ish part. */
@@ -31,11 +32,13 @@ data class Item(
 data class Section(val title: String, val items: List<Item>)
 data class PlaylistInfo(val id: Long, val name: String, val trackCount: Int)
 
+data class PairInfo(val code: String, val secret: String, val url: String)
+
 class ApiException(val code: Int, message: String) : IOException(message)
 
 private fun JSONObject.toItem() = Item(
     optString("type"), optString("id"), optString("title"), optString("subtitle"),
-    optString("thumbnail").ifEmpty { null }
+    optString("thumbnail").ifEmpty { null }, optInt("duration")
 )
 
 private fun parseSections(text: String): List<Section> {
@@ -107,11 +110,11 @@ class Api(private val prefs: Prefs) {
     }
 
     // ---- YouTube Music ----
-    suspend fun home() = parseSections(call("GET", "/api/v1/home"))
+    suspend fun home() = parseSections(call("GET", "/api/v1/home?mode=${prefs.mode}"))
     suspend fun search(q: String, songsOnly: Boolean) =
-        parseSections(call("GET", "/api/v1/search?q=${enc(q)}" + if (songsOnly) "&filter=songs" else ""))
-    suspend fun library() = parseSections(call("GET", "/api/v1/library/playlists"))
-    suspend fun ytPlaylist(id: String) = parseSections(call("GET", "/api/v1/ytplaylist/${enc(id)}"))
+        parseSections(call("GET", "/api/v1/search?mode=${prefs.mode}&q=${enc(q)}" + if (songsOnly) "&filter=only" else ""))
+    suspend fun library() = parseSections(call("GET", "/api/v1/library/playlists?mode=${prefs.mode}"))
+    suspend fun ytPlaylist(id: String) = parseSections(call("GET", "/api/v1/ytplaylist/${enc(id)}?mode=${prefs.mode}"))
 
     // ---- local playlists ----
     suspend fun playlists(): List<PlaylistInfo> {
@@ -122,7 +125,46 @@ class Api(private val prefs: Prefs) {
         }
     }
 
-    suspend fun createPlaylist(name: String) { call("POST", "/api/v1/playlists", JSONObject().put("name", name)) }
+    suspend fun createPlaylist(name: String, tracks: List<Item> = emptyList()) {
+        val arr = JSONArray()
+        tracks.forEach { arr.put(JSONObject().put("videoId", it.id).put("title", it.title).put("artist", it.artist)) }
+        call("POST", "/api/v1/playlists", JSONObject().put("name", name).put("tracks", arr))
+    }
+
+    suspend fun setOrder(pid: Long, videoIds: List<String>) {
+        call("PUT", "/api/v1/playlists/$pid/order", JSONObject().put("videoIds", JSONArray(videoIds)))
+    }
+
+    /** Creates a real (private) playlist on the user's YouTube account. */
+    suspend fun createYtPlaylist(title: String, videoIds: List<String>): String {
+        val res = call("POST", "/api/v1/ytplaylists", JSONObject()
+            .put("title", title).put("privacy", "PRIVATE").put("mode", prefs.mode)
+            .put("videoIds", JSONArray(videoIds)))
+        return JSONObject(res).getString("playlistId")
+    }
+
+    // ---- auto-mix, play tracking, prefetch ----
+    suspend fun radio(videoId: String): List<Item> =
+        parseSections(call("GET", "/api/v1/queue?mode=${prefs.mode}&videoId=${enc(videoId)}"))
+            .flatMap { it.items }.filter { it.type == "song" }
+
+    suspend fun played(id: String) { call("POST", "/api/v1/played/$id") }
+    suspend fun prepare(id: String) { call("POST", "/api/v1/prepare/$id") }
+
+    // ---- pair with a computer ----
+    suspend fun pairStart(): PairInfo {
+        val headers = if (prefs.regKey.isNotEmpty()) mapOf("X-Registration-Key" to prefs.regKey) else emptyMap()
+        val o = JSONObject(call("POST", "/api/v1/pair/start", JSONObject().put("username", prefs.username), headers))
+        return PairInfo(o.getString("code"), o.getString("secret"), o.getString("url"))
+    }
+
+    /** True once the computer has submitted the cookie and the server finished linking. */
+    suspend fun pairStatus(info: PairInfo): Boolean {
+        val o = JSONObject(call("GET", "/api/v1/pair/status?code=${enc(info.code)}&secret=${enc(info.secret)}"))
+        if (o.getString("status") != "done") return false
+        o.optString("token").takeIf { it.isNotEmpty() }?.let { prefs.token = it }
+        return true
+    }
     suspend fun deletePlaylist(id: Long) { call("DELETE", "/api/v1/playlists/$id") }
 
     suspend fun playlist(id: Long): Pair<String, List<Item>> {

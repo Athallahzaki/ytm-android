@@ -41,7 +41,9 @@ import com.ytm.app.ui.HomeScreen
 import com.ytm.app.ui.LibraryScreen
 import com.ytm.app.ui.MiniPlayer
 import com.ytm.app.ui.NowPlayingScreen
+import com.ytm.app.ui.PairLoginScreen
 import com.ytm.app.ui.PasteLoginScreen
+import com.ytm.app.ui.QueueScreen
 import com.ytm.app.ui.SearchScreen
 import com.ytm.app.ui.SetupScreen
 import com.ytm.app.ui.WebLoginScreen
@@ -118,7 +120,8 @@ fun AppRoot(vm: MainViewModel = viewModel()) {
             modifier = Modifier.padding(pad)
         ) {
             composable("setup") {
-                SetupScreen(vm, onWeb = { nav.navigate("login/web") }, onPaste = { nav.navigate("login/paste") })
+                SetupScreen(vm, onWeb = { nav.navigate("login/web") }, onPaste = { nav.navigate("login/paste") },
+                    onPair = { nav.navigate("login/pair") })
             }
             composable("login/web") {
                 WebLoginScreen(vm, onBack = { nav.popBackStack() },
@@ -128,6 +131,10 @@ fun AppRoot(vm: MainViewModel = viewModel()) {
             composable("login/paste") {
                 PasteLoginScreen(vm, onBack = { nav.popBackStack() }, onDone = { goHomeAfterLogin() })
             }
+            composable("login/pair") {
+                PairLoginScreen(vm, onBack = { nav.popBackStack() }, onDone = { goHomeAfterLogin() })
+            }
+            composable("queue") { QueueScreen(vm, onBack = { nav.popBackStack() }) }
             composable("home") {
                 HomeScreen(vm, onOpen = { nav.navigate(collectionRoute("yt", it.id, it.title)) },
                     onRelogin = { nav.navigate("setup") }, onLogout = {
@@ -162,7 +169,7 @@ fun AppRoot(vm: MainViewModel = viewModel()) {
                     onRelogin = { nav.navigate("setup") }
                 )
             }
-            composable("now") { NowPlayingScreen(vm, onBack = { nav.popBackStack() }) }
+            composable("now") { NowPlayingScreen(vm, onBack = { nav.popBackStack() }, onQueue = { nav.navigate("queue") }) }
         }
     }
 }

@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -18,12 +20,19 @@ data class UiState<T>(
 )
 
 data class CollectionData(val title: String, val sections: List<Section>)
+data class PairUi(val code: String? = null, val url: String? = null, val error: String? = null)
 data class LoginUi(val busy: Boolean = false, val error: String? = null, val done: Boolean = false)
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as App
     val prefs = app.prefs
     private val api = app.api
+
+    private val _mode = MutableStateFlow(prefs.mode)
+    val mode: StateFlow<String> = _mode
+    private val _pair = MutableStateFlow(PairUi())
+    val pair: StateFlow<PairUi> = _pair
+    private var pairJob: Job? = null
 
     private val _home = MutableStateFlow(UiState<List<Section>>())
     val home: StateFlow<UiState<List<Section>>> = _home
@@ -104,6 +113,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         api.removeTrack(pid, item.id)
         loadCollection("local", pid.toString(), "")
     }
+
+    fun setMode(m: String) {
+        if (m == _mode.value) return
+        prefs.mode = m
+        _mode.value = m
+        _home.value = UiState(); _search.value = UiState(); _library.value = UiState()
+    }
+
+    fun saveQueue(name: String, items: List<Item>, toYouTube: Boolean) =
+        act(if (toYouTube) "Created on YouTube (private)" else "Playlist saved") {
+            val songs = items.filter { it.type == "song" }
+            if (toYouTube) api.createYtPlaylist(name, songs.map { it.id }) else api.createPlaylist(name, songs)
+        }
+
+    fun moveInPlaylist(pid: Long, item: Item, delta: Int) = act {
+        val songs = _collection.value.data?.sections?.flatMap { it.items }
+            ?.filter { it.type == "song" }.orEmpty().toMutableList()
+        val i = songs.indexOfFirst { it.id == item.id }
+        val j = i + delta
+        if (i < 0 || j < 0 || j >= songs.size) return@act
+        songs.add(j, songs.removeAt(i))
+        api.setOrder(pid, songs.map { it.id })
+        loadCollection("local", pid.toString(), "")
+    }
+
+    // ---- pair with a computer ----
+    fun startPairing() {
+        pairJob?.cancel()
+        pairJob = viewModelScope.launch {
+            _pair.value = PairUi()
+            try {
+                val info = api.pairStart()
+                _pair.value = PairUi(code = info.code, url = info.url)
+                while (true) {
+                    delay(2000)
+                    if (api.pairStatus(info)) { _login.value = LoginUi(done = true); return@launch }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ApiException) {
+                _pair.value = PairUi(error = if (e.code == 404) "The code expired. Try again." else e.message ?: "Pairing failed")
+            } catch (e: Exception) {
+                _pair.value = PairUi(error = "Can't reach the server.")
+            }
+        }
+    }
+
+    fun cancelPairing() { pairJob?.cancel(); pairJob = null }
 
     // ---- login ----
     fun checkServer(cb: (Boolean) -> Unit) { viewModelScope.launch { cb(api.health()) } }

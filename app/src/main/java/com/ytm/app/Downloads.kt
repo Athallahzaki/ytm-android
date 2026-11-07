@@ -34,7 +34,7 @@ class Downloads(ctx: Context, private val api: Api) {
         val arr = JSONArray(indexFile.readText())
         (0 until arr.length()).map { arr.getJSONObject(it) }.map {
             Item("song", it.getString("id"), it.optString("title"), it.optString("subtitle"),
-                it.optString("thumb").ifEmpty { null })
+                it.optString("thumb").ifEmpty { null }, it.optInt("duration"))
         }.filter { file(it.id) != null }
     }.getOrDefault(emptyList())
 
@@ -42,7 +42,7 @@ class Downloads(ctx: Context, private val api: Api) {
         val arr = JSONArray()
         list.forEach {
             arr.put(JSONObject().put("id", it.id).put("title", it.title)
-                .put("subtitle", it.artist).put("thumb", it.thumb ?: ""))
+                .put("subtitle", it.artist).put("thumb", it.thumb ?: "").put("duration", it.duration))
         }
         indexFile.writeText(arr.toString())
     }

@@ -15,7 +15,7 @@ class App : Application() {
         prefs = Prefs(this)
         api = Api(prefs)
         downloads = Downloads(this, api)
-        player = PlayerController(this, api)
+        player = PlayerController(this, api) { id -> downloads.file(id) != null }
     }
 
     /** Prefer the offline file; otherwise stream from the server. */

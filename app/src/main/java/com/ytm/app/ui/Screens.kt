@@ -58,8 +58,9 @@ import com.ytm.app.MainViewModel
 fun HomeScreen(vm: MainViewModel, onOpen: (Item) -> Unit, onRelogin: () -> Unit, onLogout: () -> Unit) {
     val app = LocalContext.current.applicationContext as App
     val state by vm.home.collectAsStateWithLifecycle()
+    val mode by vm.mode.collectAsStateWithLifecycle()
     var menu by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { if (state.data == null) vm.loadHome() }
+    LaunchedEffect(mode) { if (state.data == null) vm.loadHome() }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
@@ -73,6 +74,7 @@ fun HomeScreen(vm: MainViewModel, onOpen: (Item) -> Unit, onRelogin: () -> Unit,
                 }
             }
         )
+        ModeChips(mode, vm::setMode)
         StateView(state, onRetry = vm::loadHome, onRelogin = onRelogin) { sections ->
             LazyColumn(Modifier.fillMaxSize()) {
                 items(sections) { sec ->
@@ -82,7 +84,7 @@ fun HomeScreen(vm: MainViewModel, onOpen: (Item) -> Unit, onRelogin: () -> Unit,
                     LazyRow(contentPadding = PaddingValues(horizontal = 10.dp)) {
                         items(sec.items) { item ->
                             ItemCard(item) {
-                                if (item.type == "song") app.player.play(songs, songs.indexOfFirst { it.id == item.id }.coerceAtLeast(0))
+                                if (item.type == "song") app.player.playRadio(item)
                                 else onOpen(item)
                             }
                         }
@@ -97,10 +99,15 @@ fun HomeScreen(vm: MainViewModel, onOpen: (Item) -> Unit, onRelogin: () -> Unit,
 @Composable
 fun SearchScreen(vm: MainViewModel, onOpen: (Item) -> Unit, onRelogin: () -> Unit) {
     val state by vm.search.collectAsStateWithLifecycle()
+    val mode by vm.mode.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
-    var songsOnly by rememberSaveable { mutableStateOf(true) }
+    var songsOnly by rememberSaveable(mode) { mutableStateOf(mode == "music") }
 
     Column(Modifier.fillMaxSize()) {
+        ModeChips(mode) { m ->
+            vm.setMode(m)
+            if (query.isNotBlank()) vm.search(query, m == "music")
+        }
         OutlinedTextField(
             query, { query = it }, singleLine = true, label = { Text("Search songs, artists, albums") },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -109,10 +116,10 @@ fun SearchScreen(vm: MainViewModel, onOpen: (Item) -> Unit, onRelogin: () -> Uni
         )
         Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = songsOnly, onClick = { songsOnly = !songsOnly; vm.search(query, songsOnly) },
-                label = { Text("Songs only") })
+                label = { Text(if (mode == "music") "Songs only" else "Videos only") })
         }
         StateView(state, onRetry = { vm.search(query, songsOnly) }, onRelogin = onRelogin) { sections ->
-            LazyColumn(Modifier.fillMaxSize()) { sectionRows(sections, vm, onOpen) }
+            LazyColumn(Modifier.fillMaxSize()) { sectionRows(sections, vm, onOpen, radio = true) }
         }
     }
 }
@@ -241,7 +248,15 @@ fun CollectionScreen(
         )
         StateView(state, onRetry = { vm.loadCollection(kind, id, title) }, onRelogin = onRelogin) { c ->
             LazyColumn(Modifier.fillMaxSize()) {
-                sectionRows(c.sections, vm, onOpen, localId?.let { pid -> { item: Item -> vm.removeFromPlaylist(pid, item) } })
+                sectionRows(c.sections, vm, onOpen, extras = localId?.let { pid ->
+                    { item: Item ->
+                        listOf<Pair<String, () -> Unit>>(
+                            "Move up" to { vm.moveInPlaylist(pid, item, -1) },
+                            "Move down" to { vm.moveInPlaylist(pid, item, 1) },
+                            "Remove from this playlist" to { vm.removeFromPlaylist(pid, item) }
+                        )
+                    }
+                })
             }
         }
     }

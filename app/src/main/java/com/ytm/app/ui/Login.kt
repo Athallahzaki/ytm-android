@@ -29,6 +29,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,7 +55,7 @@ private const val CHROME_UA =
 private val USERNAME_RE = Regex("^[A-Za-z0-9_.-]{2,32}$")
 
 @Composable
-fun SetupScreen(vm: MainViewModel, onWeb: () -> Unit, onPaste: () -> Unit) {
+fun SetupScreen(vm: MainViewModel, onWeb: () -> Unit, onPaste: () -> Unit, onPair: () -> Unit) {
     val prefs = vm.prefs
     val relogin = prefs.loggedIn
     var server by remember { mutableStateOf(prefs.serverUrl) }
@@ -105,8 +106,8 @@ fun SetupScreen(vm: MainViewModel, onWeb: () -> Unit, onPaste: () -> Unit) {
         OutlinedButton(onClick = { proceed(onPaste) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
             Text("Paste cookie manually")
         }
-        OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
-            Text("Pair with a computer (coming soon)")
+        OutlinedButton(onClick = { proceed(onPair) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+            Text("Pair with a computer")
         }
     }
 }
@@ -207,5 +208,44 @@ fun PasteLoginScreen(vm: MainViewModel, onBack: () -> Unit, onDone: () -> Unit) 
         Button(onClick = ::submit, enabled = cookie.isNotBlank() && !login.busy, modifier = Modifier.fillMaxWidth()) {
             if (login.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Sign in")
         }
+    }
+}
+
+@Composable
+fun PairLoginScreen(vm: MainViewModel, onBack: () -> Unit, onDone: () -> Unit) {
+    val pair by vm.pair.collectAsStateWithLifecycle()
+    val login by vm.login.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { vm.startPairing() }
+    DisposableEffect(Unit) { onDispose { vm.cancelPairing() } }
+    LaunchedEffect(login.done) { if (login.done) onDone() }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+            Text("Pair with a computer", style = MaterialTheme.typography.titleLarge)
+        }
+        Text("1. On a computer, open this address in a browser:")
+        pair.url?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
+        Text("2. Follow the steps on that page and enter this code:")
+        pair.code?.let { Text(it, style = MaterialTheme.typography.displayMedium) }
+        when {
+            pair.error != null -> {
+                Text(pair.error!!, color = MaterialTheme.colorScheme.error)
+                Button(onClick = { vm.startPairing() }) { Text("Try again") }
+            }
+            pair.code != null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("  Waiting for the computer...")
+            }
+            else -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        }
+        Text(
+            "The cookie goes from your computer straight to your own server. " +
+                "Use HTTPS if the server is reachable from the internet.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

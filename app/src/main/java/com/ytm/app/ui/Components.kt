@@ -25,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -96,7 +97,7 @@ fun ItemRow(item: Item, onClick: () -> Unit, trailing: @Composable () -> Unit = 
 
 /** Overflow menu for a song: queue, playlists, offline download. */
 @Composable
-fun SongMenuButton(item: Item, vm: MainViewModel, onRemove: (() -> Unit)? = null) {
+fun SongMenuButton(item: Item, vm: MainViewModel, extras: List<Pair<String, () -> Unit>> = emptyList()) {
     val app = LocalContext.current.applicationContext as App
     var open by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf(false) }
@@ -114,8 +115,8 @@ fun SongMenuButton(item: Item, vm: MainViewModel, onRemove: (() -> Unit)? = null
             } else {
                 DropdownMenuItem(text = { Text("Download") }, onClick = { app.downloads.download(item); open = false })
             }
-            if (onRemove != null) {
-                DropdownMenuItem(text = { Text("Remove from this playlist") }, onClick = { onRemove(); open = false })
+            extras.forEach { (label, action) ->
+                DropdownMenuItem(text = { Text(label) }, onClick = { action(); open = false })
             }
         }
     }
@@ -148,23 +149,27 @@ fun PlaylistPicker(vm: MainViewModel, onPick: (Long) -> Unit, onDismiss: () -> U
 @Composable
 fun SongOrItemRow(
     item: Item, songs: List<Item>, vm: MainViewModel,
-    onOpen: (Item) -> Unit, onRemove: ((Item) -> Unit)? = null
+    onOpen: (Item) -> Unit, radio: Boolean = false,
+    extras: ((Item) -> List<Pair<String, () -> Unit>>)? = null
 ) {
     val app = LocalContext.current.applicationContext as App
     ItemRow(
         item,
         onClick = {
-            if (item.type == "song") app.player.play(songs, songs.indexOfFirst { it.id == item.id }.coerceAtLeast(0))
-            else onOpen(item)
+            if (item.type == "song") {
+                if (radio) app.player.playRadio(item)
+                else app.player.play(songs, songs.indexOfFirst { it.id == item.id }.coerceAtLeast(0))
+            } else onOpen(item)
         },
         trailing = {
-            if (item.type == "song") SongMenuButton(item, vm, onRemove?.let { r -> { r(item) } })
+            if (item.type == "song") SongMenuButton(item, vm, extras?.invoke(item) ?: emptyList())
         }
     )
 }
 
 fun LazyListScope.sectionRows(
-    sections: List<Section>, vm: MainViewModel, onOpen: (Item) -> Unit, onRemove: ((Item) -> Unit)? = null
+    sections: List<Section>, vm: MainViewModel, onOpen: (Item) -> Unit, radio: Boolean = false,
+    extras: ((Item) -> List<Pair<String, () -> Unit>>)? = null
 ) {
     sections.forEach { sec ->
         if (sec.title.isNotBlank()) item {
@@ -172,7 +177,7 @@ fun LazyListScope.sectionRows(
                 modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 4.dp))
         }
         val songs = sec.items.filter { it.type == "song" }
-        items(sec.items) { SongOrItemRow(it, songs, vm, onOpen, onRemove) }
+        items(sec.items) { SongOrItemRow(it, songs, vm, onOpen, radio, extras) }
     }
 }
 
@@ -199,5 +204,13 @@ fun <T> StateView(
             }
         }
         else -> Box(Modifier.fillMaxSize())
+    }
+}
+
+@Composable
+fun ModeChips(mode: String, onChange: (String) -> Unit) {
+    Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = mode == "music", onClick = { onChange("music") }, label = { Text("Music") })
+        FilterChip(selected = mode == "youtube", onClick = { onChange("youtube") }, label = { Text("YouTube") })
     }
 }

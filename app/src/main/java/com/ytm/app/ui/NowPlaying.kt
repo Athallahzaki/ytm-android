@@ -78,7 +78,7 @@ fun MiniPlayer(player: PlayerController, onOpen: () -> Unit) {
 }
 
 @Composable
-fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit) {
     val app = LocalContext.current.applicationContext as App
     val player = app.player
     val ui by player.ui.collectAsStateWithLifecycle()
@@ -125,6 +125,7 @@ fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit) {
         Spacer(Modifier.height(16.dp))
 
         val seekable = duration > 0
+        val shownDur = if (seekable) duration else item.duration * 1000L
         Slider(
             value = dragging ?: position.toFloat().coerceAtMost(if (seekable) duration.toFloat() else 1f),
             onValueChange = { dragging = it },
@@ -134,7 +135,7 @@ fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit) {
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(fmt(dragging?.toLong() ?: position), style = MaterialTheme.typography.labelMedium)
-            Text(if (seekable) fmt(duration) else "live", style = MaterialTheme.typography.labelMedium)
+            Text(if (shownDur > 0) fmt(shownDur) else "--:--", style = MaterialTheme.typography.labelMedium)
         }
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
@@ -150,6 +151,27 @@ fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit) {
             IconButton(onClick = { player.cycleRepeat() }) {
                 Icon(if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat, "Repeat",
                     tint = if (ui.repeat == Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        val next = ui.queue.getOrNull(ui.index + 1)
+        Surface(
+            tonalElevation = 3.dp, shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onQueue)
+        ) {
+            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (next != null) {
+                    Thumb(next.thumbUrl, 44.dp)
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text("Up next", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Text(next.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                        Text(next.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    Text("Nothing queued after this", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                }
+                Text("Queue (${ui.queue.size})", style = MaterialTheme.typography.labelLarge)
             }
         }
     }
